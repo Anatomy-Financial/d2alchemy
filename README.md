@@ -1,4 +1,4 @@
-# sqlalchemy-d2
+# d2alchemy
 
 A Python library that converts SQLAlchemy Models into a D2 file for visualization and ERD generation.
 
@@ -8,8 +8,8 @@ A Python library that converts SQLAlchemy Models into a D2 file for visualizatio
 2. Clone the repository:
 
 ```bash
-git clone https://github.com/Anatomy-Financial/sqlalchemy-d2.git
-cd sqlalchemy-d2
+git clone https://github.com/Anatomy-Financial/d2alchemy.git
+cd d2alchemy
 ```
 
 ```bash
