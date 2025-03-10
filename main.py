@@ -14,6 +14,8 @@ Recursively find all SQLAlchemy models in a given directory/project
 and extract their column information with constraints.
 """
 
+DEFAULT_GROUP_PREFIX = "Other"
+
 
 @dataclass
 class ColumnConstraint:
@@ -132,11 +134,12 @@ class Table:
 
             # Create a container for tables without a prefix
             no_prefix_container = D2Shape(
-                "Other",
+                DEFAULT_GROUP_PREFIX,
+                label="",
                 style=D2Style(
                     fill="white",
+                    stroke="white",
                 ),
-                near="bottom-center",
             )
             diagram.add_shape(no_prefix_container)
 
@@ -184,6 +187,7 @@ class Table:
                 else:
                     # Add tables without a prefix to the no_prefix_container
                     no_prefix_container.add_shape(d2_table)
+                    table_prefix_mapping[table.name] = DEFAULT_GROUP_PREFIX
             else:
                 # If no groups are provided, add directly to the diagram
                 diagram.add_shape(d2_table)
@@ -195,26 +199,27 @@ class Table:
                 if column.constraint.foreign_key:
                     # Parse the foreign key reference
                     try:
-                        ref_table_raw, ref_column = column.constraint.foreign_key.split(
-                            "."
-                        )
+                        ref_parts = column.constraint.foreign_key.split(".")
+                        if len(ref_parts) != 2:
+                            raise ValueError("Invalid foreign key format")
 
-                        # Try to find the actual table name (handling both CamelCase and snake_case)
+                        ref_table_raw, ref_column = ref_parts
+
+                        # Try to find the actual table name
                         if ref_table_raw in table_name_mapping:
                             ref_table = table_name_mapping[ref_table_raw]
                         else:
-                            # Try to convert CamelCase to snake_case or vice versa
-                            # This is a fallback if the direct mapping doesn't work
+                            # Fallback to original name
                             ref_table = ref_table_raw
                             print(
                                 f"Note: Using original table name reference: {ref_table}"
                             )
 
-                        # Get the source and target table prefixes (if any)
+                        # Get prefixes
                         source_prefix = table_prefix_mapping.get(table.name)
                         target_prefix = table_prefix_mapping.get(ref_table)
 
-                        # Create fully qualified table names with prefixes if needed
+                        # Create qualified table names
                         source_qualified = (
                             f"{source_prefix}.{table.name}"
                             if source_prefix
@@ -226,6 +231,11 @@ class Table:
                             else ref_table
                         )
 
+                        print(
+                            f"Creating foreign key connection: {source_qualified}.{column.name} → {target_qualified}.{ref_column}"
+                        )
+
+                        # Create and add the foreign key connection
                         fk = create_foreign_key_connection(
                             source_qualified, column.name, target_qualified, ref_column
                         )
@@ -233,7 +243,8 @@ class Table:
                         diagram.add_connection(fk)
                     except ValueError:
                         print(
-                            f"Warning: Invalid foreign key format in {table.name}.{column.name}: {column.constraint.foreign_key}"
+                            f"Warning: Invalid foreign key format in {table.name}."
+                            f"{column.name}: {column.constraint.foreign_key}"
                         )
 
         return diagram, connections
