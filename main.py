@@ -6,7 +6,7 @@ from typing import List, Set, Dict, Any, Optional, Tuple
 from dataclasses import dataclass, field
 import argparse
 
-from py_d2.diagram import D2Diagram
+from py_d2 import D2Diagram, D2Shape
 from py_d2.sql_table import create_foreign_key_connection, SQLConstraint, SQLTable
 
 """
@@ -107,6 +107,7 @@ class Table:
 
         Args:
             tables: List of Table objects
+            group_prefixes: List of prefixes to group tables by
 
         Returns:
             Tuple containing (D2Diagram, list of foreign key connections)
@@ -115,10 +116,19 @@ class Table:
         # Create a new diagram
         diagram = D2Diagram()
 
+        prefix_containers = {}
+        for prefix in group_prefixes:
+            print(f"Adding prefix container: {prefix}")
+            prefix_container = D2Shape(prefix)
+            diagram.add_shape(prefix_container)
+            prefix_containers[prefix] = prefix_container
+
         # Add all tables to the diagram
         d2_tables = {}
         # Create a mapping from both CamelCase and snake_case names to the table objects
         table_name_mapping = {}
+        # Track which prefix each table belongs to (if any)
+        table_prefix_mapping: Dict[str, Optional[str]] = {}
 
         for table in tables:
             d2_table = table.to_d2_table()
@@ -132,7 +142,24 @@ class Table:
             ).lstrip("_")
             table_name_mapping[snake_case] = table.name
 
-            diagram.add_shape(d2_table)
+            table_prefixes = [
+                prefix for prefix in group_prefixes if table.name.startswith(prefix)
+            ]
+
+            if len(table_prefixes) > 1:
+                raise ValueError(
+                    f"Table {table.name} has multiple prefixes: {table_prefixes}. "
+                    "Please specify a single prefix for each table."
+                )
+
+            # Store the prefix for this table (or None if it doesn't have one)
+            table_prefix = table_prefixes[0] if table_prefixes else None
+            table_prefix_mapping[table.name] = table_prefix
+
+            if table_prefix:
+                prefix_containers[table_prefix].add_shape(d2_table)
+            else:
+                diagram.add_shape(d2_table)
 
         # Create foreign key connections
         connections = []
@@ -156,8 +183,16 @@ class Table:
                                 f"Note: Using original table name reference: {ref_table}"
                             )
 
+                        # Get the source and target table prefixes (if any)
+                        source_prefix = table_prefix_mapping.get(table.name)
+                        target_prefix = table_prefix_mapping.get(ref_table)
+                        
+                        # Create fully qualified table names with prefixes if needed
+                        source_qualified = f"{source_prefix}.{table.name}" if source_prefix else table.name
+                        target_qualified = f"{target_prefix}.{ref_table}" if target_prefix else ref_table
+
                         fk = create_foreign_key_connection(
-                            table.name, column.name, ref_table, ref_column
+                            source_qualified, column.name, target_qualified, ref_column
                         )
                         connections.append(fk)
                         diagram.add_connection(fk)
@@ -347,11 +382,10 @@ if __name__ == "__main__":
         help="Directory to scan for SQLAlchemy models (default: current directory)",
     )
     parser.add_argument(
-        "--group",
+        "--groups",
         type=str,
-        nargs="+",
-        default=[],
-        help="Group the tables by shared prefix. Can provide multiple prefixes.",
+        default="",
+        help="Groups the tables by shared prefixes. Comma-separated list.",
     )
     parser.add_argument(
         "-o",
@@ -376,11 +410,13 @@ if __name__ == "__main__":
         print()
 
     # Convert to a py-d2 diagram
-    diagram, connections = Table.create_d2_diagram(tables, args.group)
+    group_prefixes = args.groups.split(",") if args.groups else []
+    diagram, connections = Table.create_d2_diagram(tables, group_prefixes)
 
     # Write the diagram to a file
     file_name = args.output
     with open(f"{file_name}.d2", "w") as f:
+        f.write("direction: right\n")
         f.write(str(diagram))
     print(f"D2 diagram written to: {os.path.abspath(f'{file_name}.d2')}")
 
