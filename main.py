@@ -86,15 +86,18 @@ class Table:
                     if len(column.type_args) >= 2:
                         type_str += f"({column.type_args[0]},{column.type_args[1]})"
 
-            # First add with primary key if it's a primary key
+            if column.constraint.is_nullable:
+                type_str += "?"
+
+            constraints = []
             if column.constraint.is_primary_key:
-                d2_table.add_field(column.name, type_str, SQLConstraint.PRIMARY_KEY)
-            # Otherwise add with foreign key if it's a foreign key
-            elif column.constraint.foreign_key:
-                d2_table.add_field(column.name, type_str, SQLConstraint.FOREIGN_KEY)
-            # Add all other columns without constraint information
-            else:
-                d2_table.add_field(column.name, type_str)
+                constraints.append(SQLConstraint.PRIMARY_KEY)
+            if column.constraint.foreign_key:
+                constraints.append(SQLConstraint.FOREIGN_KEY)
+            if column.constraint.is_unique:
+                constraints.append(SQLConstraint.UNIQUE)
+
+            d2_table.add_field(column.name, type_str, constraints)
 
         return d2_table
 
@@ -304,14 +307,27 @@ class SQLAlchemyModelVisitor(ast.NodeVisitor):
         # Extract column type and attributes
         if node.args:
             # First arg is usually the column type
-            if isinstance(node.args[0], ast.Name):
-                column_type = node.args[0].id
-            elif isinstance(node.args[0], ast.Call):
-                if isinstance(node.args[0].func, ast.Name):
-                    # Handle types with parameters like String(50)
-                    column_type = node.args[0].func.id
-                    if node.args[0].args:
-                        for arg in node.args[0].args:
+            first_arg = node.args[0]
+
+            # Handle simple type names (e.g., String)
+            if isinstance(first_arg, ast.Name):
+                column_type = first_arg.id
+            # Handle attribute access types (e.g., db.String)
+            elif isinstance(first_arg, ast.Attribute):
+                column_type = first_arg.attr
+            # Handle types with parameters like String(50)
+            elif isinstance(first_arg, ast.Call):
+                if isinstance(first_arg.func, ast.Name):
+                    column_type = first_arg.func.id
+                    if first_arg.args:
+                        for arg in first_arg.args:
+                            if isinstance(arg, ast.Constant):
+                                type_args.append(arg.value)
+                # Handle types with parameters like db.String(50)
+                elif isinstance(first_arg.func, ast.Attribute):
+                    column_type = first_arg.func.attr
+                    if first_arg.args:
+                        for arg in first_arg.args:
                             if isinstance(arg, ast.Constant):
                                 type_args.append(arg.value)
 
