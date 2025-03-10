@@ -19,10 +19,12 @@ uv pip install -r requirements
 
 ## Usage
 
-### Direct Script Execution
-
-You can run the script directly without installation:
-
 ```bash
 uv run main.py --directory /path/to/your/models
+```
+
+Full usage:
+
+```bash
+uv run main.py  --help
 ```
