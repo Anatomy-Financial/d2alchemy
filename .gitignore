@@ -172,3 +172,5 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+sqlalchemy_schema.d2
+sqlalchemy_schema.svg

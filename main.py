@@ -1,13 +1,13 @@
+import argparse
 import ast
 import os
 import subprocess
-from pathlib import Path
-from typing import List, Set, Dict, Any, Optional, Tuple
 from dataclasses import dataclass, field
-import argparse
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Set, Tuple
 
-from py_d2 import D2Diagram, D2Shape
-from py_d2.sql_table import create_foreign_key_connection, SQLConstraint, SQLTable
+from py_d2 import D2Diagram, D2Shape, D2Style
+from py_d2.sql_table import SQLConstraint, SQLTable, create_foreign_key_connection
 
 """
 Recursively find all SQLAlchemy models in a given directory/project
@@ -117,11 +117,25 @@ class Table:
         diagram = D2Diagram()
 
         prefix_containers = {}
-        for prefix in group_prefixes:
-            print(f"Adding prefix container: {prefix}")
-            prefix_container = D2Shape(prefix)
-            diagram.add_shape(prefix_container)
-            prefix_containers[prefix] = prefix_container
+        no_prefix_container = None
+
+        # Only create containers if group_prefixes is provided
+        if group_prefixes:
+            for prefix in group_prefixes:
+                print(f"Adding prefix container: {prefix}")
+                prefix_container = D2Shape(prefix)
+                diagram.add_shape(prefix_container)
+                prefix_containers[prefix] = prefix_container
+
+            # Create a container for tables without a prefix
+            no_prefix_container = D2Shape(
+                "Other",
+                style=D2Style(
+                    fill="white",
+                ),
+                near="bottom-center",
+            )
+            diagram.add_shape(no_prefix_container)
 
         # Add all tables to the diagram
         d2_tables = {}
@@ -142,23 +156,33 @@ class Table:
             ).lstrip("_")
             table_name_mapping[snake_case] = table.name
 
-            table_prefixes = [
-                prefix for prefix in group_prefixes if table.name.startswith(prefix)
-            ]
+            # Only check for prefixes if group_prefixes is provided
+            table_prefix = None
+            if group_prefixes:
+                table_prefixes = [
+                    prefix for prefix in group_prefixes if table.name.startswith(prefix)
+                ]
 
-            if len(table_prefixes) > 1:
-                raise ValueError(
-                    f"Table {table.name} has multiple prefixes: {table_prefixes}. "
-                    "Please specify a single prefix for each table."
-                )
+                if len(table_prefixes) > 1:
+                    raise ValueError(
+                        f"Table {table.name} has multiple prefixes: {table_prefixes}. "
+                        "Please specify a single prefix for each table."
+                    )
 
-            # Store the prefix for this table (or None if it doesn't have one)
-            table_prefix = table_prefixes[0] if table_prefixes else None
+                # Store the prefix for this table (or None if it doesn't have one)
+                table_prefix = table_prefixes[0] if table_prefixes else None
+
             table_prefix_mapping[table.name] = table_prefix
 
-            if table_prefix:
-                prefix_containers[table_prefix].add_shape(d2_table)
+            # Add the table to the appropriate container or directly to the diagram
+            if group_prefixes:
+                if table_prefix:
+                    prefix_containers[table_prefix].add_shape(d2_table)
+                else:
+                    # Add tables without a prefix to the no_prefix_container
+                    no_prefix_container.add_shape(d2_table)
             else:
+                # If no groups are provided, add directly to the diagram
                 diagram.add_shape(d2_table)
 
         # Create foreign key connections
@@ -186,10 +210,18 @@ class Table:
                         # Get the source and target table prefixes (if any)
                         source_prefix = table_prefix_mapping.get(table.name)
                         target_prefix = table_prefix_mapping.get(ref_table)
-                        
+
                         # Create fully qualified table names with prefixes if needed
-                        source_qualified = f"{source_prefix}.{table.name}" if source_prefix else table.name
-                        target_qualified = f"{target_prefix}.{ref_table}" if target_prefix else ref_table
+                        source_qualified = (
+                            f"{source_prefix}.{table.name}"
+                            if source_prefix
+                            else table.name
+                        )
+                        target_qualified = (
+                            f"{target_prefix}.{ref_table}"
+                            if target_prefix
+                            else ref_table
+                        )
 
                         fk = create_foreign_key_connection(
                             source_qualified, column.name, target_qualified, ref_column
@@ -370,9 +402,16 @@ def find_sqlalchemy_models(directory: str) -> List[Table]:
 
 
 if __name__ == "__main__":
-    # Set up argument parser
     parser = argparse.ArgumentParser(
-        description="Extract SQLAlchemy models from a Python project and generate a schema diagram."
+        description="Extract SQLAlchemy models from a Python project and generate a schema diagram.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python main.py -d ./my_project                # Scan a specific directory
+  python main.py --groups User,Post,Comment     # Group tables by prefixes
+  python main.py -o my_schema                   # Custom output filename
+  python main.py --skip-svg                     # Generate only D2 file, no SVG
+        """,
     )
     parser.add_argument(
         "-d",
@@ -423,7 +462,6 @@ if __name__ == "__main__":
     # Generate SVG (if d2 is installed and not skipped)
     if not args.skip_svg:
         try:
-
             subprocess.run(
                 ["d2", "--layout", "elk", f"{file_name}.d2", f"{file_name}.svg"],
                 check=True,
