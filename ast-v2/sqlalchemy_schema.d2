@@ -1,0 +1,237 @@
+Task: {
+  shape: sql_table
+  id: UUID {constraint: primary_key}
+  business_id: UUID
+  type: Unknown
+  subtype: Unknown
+  status: Unknown
+  created_at: Unknown
+  created_by: UUID
+  created_by_name: Unknown
+  updated_at: Unknown
+  updated_by: UUID
+  updated_by_name: Unknown
+}
+LockboxFileBatchTransaction: {
+  shape: sql_table
+  id: UUID {constraint: primary_key}
+  business_id: UUID
+  lockbox_file_id: UUID {constraint: foreign_key}
+  lockbox_file_batch_id: UUID {constraint: foreign_key}
+  lockbox_channel_name: Unknown
+  lockbox_site_name: Unknown
+  lockbox_transaction_id: Unknown
+  lockbox_transaction_number: Unknown
+  lockbox_transaction_type: Unknown
+  lockbox_transaction_balanced_amount: Unknown
+  lockbox_user_batch_id: Unknown
+  lockbox_items_count: Unknown
+  unique_key: Unknown
+  date_created: Unknown
+  date_updated: Unknown
+}
+Check: {
+  shape: sql_table
+  id: UUID {constraint: primary_key}
+  business_id: UUID
+  document_id: UUID {constraint: foreign_key}
+  lockbox_micr_account: Unknown
+  lockbox_micr_check_number: Unknown
+  lockbox_micr_onus: Unknown
+  lockbox_micr_rt: Unknown
+  lockbox_payor_name: Unknown
+  lockbox_check_type: Unknown
+  lockbox_export_date: Unknown
+  amount: Unknown
+  unique_key: Unknown
+  date_created: Unknown
+  date_updated: Unknown
+  sync_status: Unknown
+}
+TaskEvent: {
+  shape: sql_table
+  id: UUID {constraint: primary_key}
+  task_id: UUID {constraint: foreign_key}
+  actor_id: UUID
+  actor_name: Unknown
+  action_type: Unknown
+  created_at: Unknown
+  old_task_status: Unknown
+  new_task_status: Unknown
+  description: Unknown
+}
+DocumentOcrConfig: {
+  shape: sql_table
+  id: UUID {constraint: primary_key}
+  document_id: UUID {constraint: foreign_key}
+  model_type: Unknown
+  ocr_processor_id: Unknown
+  ocr_processor_version: Unknown
+  ocr_processor_name: Unknown
+  model_priority: Unknown
+  unique_key: Unknown
+  date_created: Unknown
+  date_updated: Unknown
+}
+DocumentTask: {
+  shape: sql_table
+  id: UUID {constraint: primary_key}
+  task_id: UUID {constraint: foreign_key}
+  document_id: UUID {constraint: foreign_key}
+  created_at: Unknown
+}
+DocumentSetError: {
+  shape: sql_table
+  id: UUID {constraint: primary_key}
+  document_set_id: UUID {constraint: foreign_key}
+  document_id: UUID {constraint: foreign_key}
+  document_set_page_id: UUID {constraint: foreign_key}
+  error: Unknown
+  date_created: Unknown
+  date_updated: Unknown
+  error_description: Unknown
+  error_subject: Unknown
+  error_stacktrace: Unknown
+  error_type: Unknown
+  severity: Unknown
+}
+OcrPipelineJob: {
+  shape: sql_table
+  id: UUID {constraint: primary_key}
+  business_id: UUID
+  document_set_id: UUID {constraint: foreign_key}
+  document_id: UUID {constraint: foreign_key}
+  date_created: Unknown
+}
+File: {
+  shape: sql_table
+  id: UUID {constraint: primary_key}
+  business_id: UUID
+  file_name: Unknown
+  file_type: Unknown
+  file_size: Unknown
+  stored_file_name: Unknown
+  modified_source_file: Unknown
+  uploaded_by: UUID
+  uploaded_by_name: Unknown
+  date_uploaded: Unknown
+  modified_by: UUID
+  modified_by_name: Unknown
+  original_file_path: Unknown
+  remit_document_id: UUID
+  date_created: Unknown
+  date_updated: Unknown
+}
+LockboxFileBatch: {
+  shape: sql_table
+  id: UUID {constraint: primary_key}
+  business_id: UUID
+  lockbox_file_id: UUID {constraint: foreign_key}
+  lockbox_batch_date: Unknown
+  lockbox_biller_bus_unit_name: Unknown
+  lockbox_depositor_account_number: Unknown
+  lockbox_depositor_bank_rt: Unknown
+  lockbox_posting_batch_number: Unknown
+  unique_key: Unknown
+  is_mod_med_reported: Unknown
+  date_created: Unknown
+  date_updated: Unknown
+}
+DocumentSet: {
+  shape: sql_table
+  id: UUID {constraint: primary_key}
+  business_id: UUID
+  parent_business_id: UUID
+  lockbox_file_id: UUID {constraint: foreign_key}
+  lockbox_file_batch_id: UUID {constraint: foreign_key}
+  lockbox_file_batch_transaction_id: UUID {constraint: foreign_key}
+  file_id: UUID {constraint: foreign_key}
+  unique_key: Unknown
+  unique_document_number: Unknown
+  selector_records_path: Unknown
+  ocr_status: Unknown
+  ocr_status_reason_code: Unknown
+  ocr_version: Unknown
+  date_created: Unknown
+  date_updated: Unknown
+  status: Integer
+  reviewed_by_user_id: UUID
+  reviewed_by_name: Unknown
+  reviewed_datetime: Unknown
+  page_count: Unknown
+  business_name: Unknown
+}
+Document: {
+  shape: sql_table
+  id: UUID {constraint: primary_key}
+  business_id: UUID
+  document_set_id: UUID {constraint: foreign_key}
+  first_document_set_page_id: UUID {constraint: foreign_key}
+  last_document_set_page_id: UUID {constraint: foreign_key}
+  type: Unknown
+  subtype: Unknown
+  correspondence_category: Unknown
+  lockbox_virtual_flag: Unknown
+  ocr_processor_id: Unknown
+  ocr_processor_version: Unknown
+  ocr_transformer: Unknown
+  sequence_number: Unknown
+  unique_key: Unknown
+  date_created: Unknown
+  date_updated: Unknown
+  ocr_last_processed_at: Unknown
+  ocr_status: Unknown
+  ocr_status_reason: Unknown
+  skip_confirm_process: Unknown
+  meta: Unknown
+}
+DocumentSetPage: {
+  shape: sql_table
+  id: UUID {constraint: primary_key}
+  business_id: UUID
+  document_set_id: UUID {constraint: foreign_key}
+  document_id: UUID {constraint: foreign_key}
+  gcs_file_path: Unknown
+  display_image: Unknown
+  is_back: Unknown
+  order: Unknown
+  unique_key: Unknown
+  is_blank: Unknown
+  lockbox_item_id: Unknown
+  date_created: Unknown
+  date_updated: Unknown
+  eob_detected: Unknown
+  status: Unknown
+  ocr_status: Unknown
+}
+LockboxFile: {
+  shape: sql_table
+  id: UUID {constraint: primary_key}
+  gcs_file_path: Unknown
+  provider_type: Unknown
+  date_created: Unknown
+  date_updated: Unknown
+  ingestion_status: Unknown
+}
+LockboxFileBatchTransaction.lockbox_file_id -> LockboxFile.id
+LockboxFileBatchTransaction.lockbox_file_batch_id -> LockboxFileBatch.id
+Check.document_id -> Document.id
+TaskEvent.task_id -> Task.id
+DocumentOcrConfig.document_id -> Document.id
+DocumentTask.task_id -> Task.id
+DocumentTask.document_id -> Document.id
+DocumentSetError.document_set_id -> DocumentSet.id
+DocumentSetError.document_id -> Document.id
+DocumentSetError.document_set_page_id -> DocumentSetPage.id
+OcrPipelineJob.document_set_id -> DocumentSet.id
+OcrPipelineJob.document_id -> Document.id
+LockboxFileBatch.lockbox_file_id -> LockboxFile.id
+DocumentSet.lockbox_file_id -> LockboxFile.id
+DocumentSet.lockbox_file_batch_id -> LockboxFileBatch.id
+DocumentSet.lockbox_file_batch_transaction_id -> LockboxFileBatchTransaction.id
+DocumentSet.file_id -> File.id
+Document.document_set_id -> DocumentSet.id
+Document.first_document_set_page_id -> DocumentSetPage.id
+Document.last_document_set_page_id -> DocumentSetPage.id
+DocumentSetPage.document_set_id -> DocumentSet.id
+DocumentSetPage.document_id -> Document.id

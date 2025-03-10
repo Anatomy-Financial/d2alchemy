@@ -1,0 +1,14 @@
+[project]
+name = "sqlalchemy-d2"
+version = "0.1.0"
+description = "Convert SQLAlchemy models to D2 diagrams for ERD visualization"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "sqlalchemy>=2.0.0",
+    "py-d2 @ git+https://github.com/Anatomy-Financial/py-d2.git",
+]
+
+
+[project.optional-dependencies]
+dev = ["mypy>=1.0.0", "types-sqlalchemy", "setuptools"]
