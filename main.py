@@ -315,10 +315,13 @@ class Table:
                     for key, value in all_values.items():
                         # Format the value as a string, escaping any special characters
                         value_str = str(value)
+                        # d2 keyword
+                        if key == "MULTIPLE":
+                            key = "MULTIPLE_"
                         # Make sure the value string is D2 syntax compatible
                         label = value_str.replace(":", "=").replace("\n", " ")
 
-                        value_shape = D2Shape(f"{key}", label=label)
+                        value_shape = D2Shape(key, label=label)
                         enum_class_shape.add_shape(value_shape)
 
                 diagram.add_shape(enum_key)
