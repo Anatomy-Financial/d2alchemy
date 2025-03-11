@@ -35,6 +35,7 @@ class Column:
     type: str
     type_args: List[Any] = field(default_factory=list)
     constraint: ColumnConstraint = field(default_factory=ColumnConstraint)
+    enum_info: Optional[Dict[str, str]] = None
 
     def __str__(self) -> str:
         constraints = []
@@ -107,12 +108,16 @@ class Table:
     def create_d2_diagram(
         tables: List["Table"],
         group_prefixes: List[str] = [],
+        show_enums_key: bool = False,
+        enum_definitions: Optional[Dict[str, Dict[str, Any]]] = None,
     ) -> Tuple["D2Diagram", List[Any]]:
         """Create a py-d2 diagram from a list of Tables.
 
         Args:
             tables: List of Table objects
             group_prefixes: List of prefixes to group tables by
+            show_enums_key: Whether to show a key for enum values
+            enum_definitions: Dictionary of enum class definitions with all values
 
         Returns:
             Tuple containing (D2Diagram, list of foreign key connections)
@@ -247,6 +252,81 @@ class Table:
                             f"{column.name}: {column.constraint.foreign_key}"
                         )
 
+        # Add enum key if requested
+        if show_enums_key:
+            # Collect all enums from the tables' columns
+            collected_enums: Dict[str, Dict[str, str]] = {}
+            enum_classes_to_find: Set[str] = set()
+
+            for table in tables:
+                for column in table.columns:
+                    if column.enum_info and column.type.lower() in [
+                        "integer",
+                        "int",
+                        "bigint",
+                        "smallint",
+                    ]:
+                        enum_class = column.enum_info.get("enum_class")
+                        enum_value = column.enum_info.get("enum_value")
+
+                        if enum_class and enum_value:
+                            if enum_class not in collected_enums:
+                                collected_enums[enum_class] = {}
+                                enum_classes_to_find.add(enum_class)
+
+                            # Add this enum value to the collection with reference to where it's used
+                            collected_enums[enum_class][
+                                enum_value
+                            ] = f"{table.name}.{column.name}"
+
+            # If we found any enums, create a key in the bottom right
+            if collected_enums or (enum_definitions and enum_definitions):
+                # Create a container for the enum key
+                enum_key = D2Shape(
+                    "enums_key",
+                    label="Enum Key",
+                    near="bottom-center",
+                    style=D2Style(
+                        fill="'#f5f5f5'",
+                        stroke="'#333333'",
+                        stroke_width=1,
+                    ),
+                )
+
+                # Process each enum class
+                for enum_class, values in collected_enums.items():
+                    enum_class_shape = SQLTable(
+                        f"{enum_class}",
+                        label=enum_class,
+                        style=D2Style(
+                            stroke_width=1,
+                        ),
+                    )
+                    enum_key.add_shape(enum_class_shape)
+
+                    # Check if we're missing the enum definition
+                    if not enum_definitions or enum_class not in enum_definitions:
+                        raise ValueError(
+                            f"Enum class {enum_class} not found in enum definitions"
+                        )
+
+                    # Add complete enum values from the definition
+                    all_values = enum_definitions[enum_class]
+                    for key, value in all_values.items():
+                        # Format the value as a string, escaping any special characters
+                        value_str = str(value)
+                        # Make sure the value string is D2 syntax compatible
+                        label = value_str.replace(":", "=").replace("\n", " ")
+
+                        value_shape = D2Shape(f"{key}", label=label)
+                        enum_class_shape.add_shape(value_shape)
+
+                diagram.add_shape(enum_key)
+
+                print(
+                    f"Added enum key with {len(collected_enums or enum_definitions or {})} enum classes"
+                )
+
         return diagram, connections
 
 
@@ -314,6 +394,7 @@ class SQLAlchemyModelVisitor(ast.NodeVisitor):
         column_type = "Unknown"
         type_args: List[Any] = []
         constraint = ColumnConstraint()
+        enum_info = None
 
         # Extract column type and attributes
         if node.args:
@@ -356,20 +437,61 @@ class SQLAlchemyModelVisitor(ast.NodeVisitor):
 
         # Extract column attributes (primary_key, nullable, etc.)
         for keyword in node.keywords:
-            if isinstance(keyword.value, ast.Constant):
-                value = keyword.value.value
-                if keyword.arg == "primary_key":
-                    constraint.is_primary_key = bool(value)
-                elif keyword.arg == "unique":
-                    constraint.is_unique = bool(value)
-                elif keyword.arg == "nullable":
-                    constraint.is_nullable = bool(value)
+            if keyword.arg == "primary_key" and isinstance(keyword.value, ast.Constant):
+                constraint.is_primary_key = bool(keyword.value.value)
+            elif keyword.arg == "unique" and isinstance(keyword.value, ast.Constant):
+                constraint.is_unique = bool(keyword.value.value)
+            elif keyword.arg == "nullable" and isinstance(keyword.value, ast.Constant):
+                constraint.is_nullable = bool(keyword.value.value)
+
+            # Extract enum information from default values
+            elif keyword.arg == "default":
+                # Check for patterns like MyEnum.MyValue.value (for integer columns)
+                if column_type.lower() in ["integer", "int", "bigint", "smallint"]:
+                    # Try to detect enum pattern: MyEnum.MyValue.value
+                    if (
+                        isinstance(keyword.value, ast.Attribute)
+                        and keyword.value.attr == "value"
+                    ):
+                        # Case: MyEnum.MyValue.value
+                        if (
+                            isinstance(keyword.value.value, ast.Attribute)
+                            and hasattr(keyword.value.value, "value")
+                            and hasattr(keyword.value.value.value, "id")
+                        ):
+                            enum_class = keyword.value.value.value.id
+                            enum_value = keyword.value.value.attr
+
+                            enum_info = {
+                                "enum_class": enum_class,
+                                "enum_value": enum_value,
+                            }
+                        # Try another pattern: module.MyEnum.MyValue.value
+                        elif isinstance(
+                            keyword.value.value, ast.Attribute
+                        ) and isinstance(keyword.value.value.value, ast.Attribute):
+                            try:
+                                # Extract parts from the attribute chain
+                                module_or_class = keyword.value.value.value.value.id
+                                enum_class = keyword.value.value.value.attr
+                                enum_value = keyword.value.value.attr
+
+                                # Use either module_or_class.enum_class or just enum_class as the class name
+                                # depending on your preference
+                                enum_info = {
+                                    "enum_class": f"{enum_class}",
+                                    "enum_value": enum_value,
+                                }
+                            except AttributeError:
+                                # Skip if we can't properly extract the values
+                                pass
 
         return Column(
             name=column_name,
             type=column_type,
             type_args=type_args,
             constraint=constraint,
+            enum_info=enum_info,
         )
 
     def _get_base_name(self, node: ast.expr) -> str:
@@ -428,6 +550,236 @@ def find_sqlalchemy_models(directory: str) -> List[Table]:
     return tables
 
 
+def find_enum_definitions(
+    directory: str, enum_classes: Set[str]
+) -> Dict[str, Dict[str, Any]]:
+    """
+    Find and parse enum class definitions to extract all key-value pairs.
+
+    Args:
+        directory: Path to the directory to search
+        enum_classes: Set of enum class names to find
+
+    Returns:
+        Dictionary mapping enum class names to their key-value pairs
+    """
+    enum_definitions: Dict[str, Dict[str, Any]] = {}
+    directory_path = Path(directory)
+
+    # Skip if no enum classes to find
+    if not enum_classes:
+        return enum_definitions
+
+    print(f"Searching for enum class definitions: {', '.join(enum_classes)}")
+
+    class EnumClassVisitor(ast.NodeVisitor):
+        """AST visitor to find enum class definitions and extract values."""
+
+        def __init__(self, enum_classes: Set[str]):
+            self.enum_classes = enum_classes
+            self.found_enums: Dict[str, Dict[str, Any]] = {}
+            # Track imported names and their actual module/source
+            self.imports: Dict[str, str] = {}
+
+        def visit_Import(self, node: ast.Import) -> None:
+            """Track import statements for looking up enums in other modules."""
+            for alias in node.names:
+                self.imports[alias.asname or alias.name] = alias.name
+            self.generic_visit(node)
+
+        def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+            """Track from ... import statements for looking up enums in other modules."""
+            if node.module:
+                for alias in node.names:
+                    # Store as module.name if possible
+                    self.imports[alias.asname or alias.name] = (
+                        f"{node.module}.{alias.name}"
+                    )
+            self.generic_visit(node)
+
+        def visit_ClassDef(self, node: ast.ClassDef) -> None:
+            # Check if this is an Enum class we're looking for
+            if node.name in self.enum_classes:
+                # Check if it's likely an Enum by examining base classes
+                is_enum = False
+                for base in node.bases:
+                    if isinstance(base, ast.Name):
+                        base_name = base.id
+                        # Check direct base class name or imported base
+                        if base_name in [
+                            "Enum",
+                            "IntEnum",
+                            "StrEnum",
+                        ] or self.imports.get(base_name, "").endswith(
+                            ("Enum", "IntEnum", "StrEnum")
+                        ):
+                            is_enum = True
+                            break
+                    elif isinstance(base, ast.Attribute) and base.attr in [
+                        "Enum",
+                        "IntEnum",
+                        "StrEnum",
+                    ]:
+                        is_enum = True
+                        break
+
+                if is_enum:
+                    # Found an enum class, extract its values
+                    enum_values = {}
+                    for item in node.body:
+                        if isinstance(item, ast.Assign):
+                            for target in item.targets:
+                                if isinstance(target, ast.Name):
+                                    name = target.id
+                                    # Extract value
+                                    if isinstance(item.value, ast.Constant):
+                                        enum_values[name] = item.value.value
+                                    # Handle auto-increment case
+                                    elif (
+                                        isinstance(item.value, ast.Call)
+                                        and isinstance(item.value.func, ast.Name)
+                                        and item.value.func.id == "auto"
+                                    ):
+                                        enum_values[name] = "auto()"
+                                    # Handle binary operations like 1 << 0, etc.
+                                    elif isinstance(item.value, ast.BinOp):
+                                        # Try to extract a string representation of the operation
+                                        try:
+                                            if isinstance(
+                                                item.value.left, ast.Constant
+                                            ) and isinstance(
+                                                item.value.right, ast.Constant
+                                            ):
+                                                left_val = item.value.left.value
+                                                right_val = item.value.right.value
+
+                                                # Handle common binary operations
+                                                if isinstance(
+                                                    item.value.op, ast.LShift
+                                                ):  # <<
+                                                    enum_values[name] = (
+                                                        f"{left_val} << {right_val} = {left_val << right_val}"
+                                                    )
+                                                elif isinstance(
+                                                    item.value.op, ast.RShift
+                                                ):  # >>
+                                                    enum_values[name] = (
+                                                        f"{left_val} >> {right_val} = {left_val >> right_val}"
+                                                    )
+                                                elif isinstance(
+                                                    item.value.op, ast.BitOr
+                                                ):  # |
+                                                    enum_values[name] = (
+                                                        f"{left_val} | {right_val} = {left_val | right_val}"
+                                                    )
+                                                elif isinstance(
+                                                    item.value.op, ast.BitAnd
+                                                ):  # &
+                                                    enum_values[name] = (
+                                                        f"{left_val} & {right_val} = {left_val & right_val}"
+                                                    )
+                                                elif isinstance(
+                                                    item.value.op, ast.BitXor
+                                                ):  # ^
+                                                    enum_values[name] = (
+                                                        f"{left_val} ^ {right_val} = {left_val ^ right_val}"
+                                                    )
+                                                elif isinstance(
+                                                    item.value.op, ast.Add
+                                                ):  # +
+                                                    enum_values[name] = (
+                                                        f"{left_val} + {right_val} = {left_val + right_val}"
+                                                    )
+                                                elif isinstance(
+                                                    item.value.op, ast.Sub
+                                                ):  # -
+                                                    enum_values[name] = (
+                                                        f"{left_val} - {right_val} = {left_val - right_val}"
+                                                    )
+                                                elif isinstance(
+                                                    item.value.op, ast.Mult
+                                                ):  # *
+                                                    enum_values[name] = (
+                                                        f"{left_val} * {right_val} = {left_val * right_val}"
+                                                    )
+                                                else:
+                                                    enum_values[name] = "BinOp"
+                                            else:
+                                                enum_values[name] = "BinOp"
+                                        except Exception:
+                                            enum_values[name] = "BinOp"
+                                    # Handle other common patterns
+                                    elif (
+                                        isinstance(item.value, ast.Attribute)
+                                        and getattr(item.value, "attr", "") == "value"
+                                    ):
+                                        # Handle references to other enum values like EnumClass.VALUE.value
+                                        if (
+                                            isinstance(item.value.value, ast.Attribute)
+                                            and hasattr(item.value.value, "value")
+                                            and hasattr(item.value.value.value, "id")
+                                        ):
+                                            other_enum = item.value.value.value.id
+                                            other_value = item.value.value.attr
+                                            enum_values[name] = (
+                                                f"{other_enum}.{other_value}.value"
+                                            )
+                                        else:
+                                            enum_values[name] = "Enum.value"
+
+                    if enum_values:
+                        self.found_enums[node.name] = enum_values
+
+            # Continue the visit for other nodes
+            self.generic_visit(node)
+
+    # Walk through all Python files in the directory
+    for root, dirs, files in os.walk(directory_path, topdown=True):
+        # Skip virtual environment directories
+        dirs[:] = [d for d in dirs if d != "venv" and d != ".venv"]
+
+        for file in files:
+            if file.endswith(".py"):
+                file_path = Path(root) / file
+
+                try:
+                    with open(file_path, "r") as f:
+                        file_content = f.read()
+
+                    try:
+                        tree = ast.parse(file_content, filename=str(file_path))
+
+                        # Visit the AST with our visitor
+                        visitor = EnumClassVisitor(enum_classes)
+                        visitor.visit(tree)
+
+                        # Merge the found enums into our result
+                        enum_definitions.update(visitor.found_enums)
+
+                        # If we've found all the enums we're looking for, we can stop
+                        if all(
+                            enum_class in enum_definitions
+                            for enum_class in enum_classes
+                        ):
+                            break
+
+                    except SyntaxError:
+                        print(f"Syntax error in file: {file_path}")
+                except Exception as e:
+                    print(f"Error reading file {file_path}: {e}")
+
+    # Report what we found
+    for enum_class in enum_classes:
+        if enum_class in enum_definitions:
+            print(
+                f"Found enum class {enum_class} with {len(enum_definitions[enum_class])} values"
+            )
+        else:
+            print(f"Could not find enum class {enum_class}")
+
+    return enum_definitions
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Extract SQLAlchemy models from a Python project and generate a schema diagram.",
@@ -454,6 +806,12 @@ Examples:
         help="Groups the tables by shared prefixes. Comma-separated list.",
     )
     parser.add_argument(
+        "--enums-key",
+        action="store_true",
+        default=False,
+        help="Add a key to the diagram to show enums values.",
+    )
+    parser.add_argument(
         "-o",
         "--output",
         type=str,
@@ -477,7 +835,27 @@ Examples:
 
     # Convert to a py-d2 diagram
     group_prefixes = args.groups.split(",") if args.groups else []
-    diagram, connections = Table.create_d2_diagram(tables, group_prefixes)
+
+    # If enum key is requested, find all enum classes used in columns
+    enum_definitions = None
+    if args.enums_key:
+        # Collect all enum class names from column defaults
+        enum_classes_to_find: Set[str] = set()
+        for table in tables:
+            for column in table.columns:
+                if column.enum_info and "enum_class" in column.enum_info:
+                    enum_classes_to_find.add(column.enum_info["enum_class"])
+
+        # Find definitions for these enum classes
+        if enum_classes_to_find:
+            enum_definitions = find_enum_definitions(
+                args.directory, enum_classes_to_find
+            )
+
+    # Create the diagram
+    diagram, connections = Table.create_d2_diagram(
+        tables, group_prefixes, args.enums_key, enum_definitions
+    )
 
     # Write the diagram to a file
     file_name = args.output
